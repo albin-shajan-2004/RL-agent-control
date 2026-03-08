@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>RL Agent · Battery Intelligence</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;800&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════ ROOT ═══════════════ */
+:root{
+  --ink:#030810;
+  --panel:#07111f;
+  --card:#0d1e35;
+  --rim:#16304f;
+  --glow:#00ffe7;
+  --lime:#b3ff00;
+  --red:#ff3d5a;
+  --amber:#ffb300;
+  --blue:#00b4ff;
+  --txt:#7aabcc;
+  --bright:#cce8ff;
+  --font-display:'Exo 2',sans-serif;
+  --font-mono:'Share Tech Mono',monospace;
+  --font-ui:'Rajdhani',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;background:var(--ink);color:var(--txt);font-family:var(--font-mono);overflow-x:hidden;}
+
+/* ═══════════════ SCANLINE OVERLAY ═══════════════ */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:1000;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,231,.015) 2px,rgba(0,255,231,.015) 4px);
+}
+
+/* ═══════════════ HEADER ═══════════════ */
+header{
+  position:relative;padding:20px 32px 16px;
+  border-bottom:1px solid var(--rim);
+  background:linear-gradient(180deg,rgba(0,255,231,.04),transparent);
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+}
+header::after{
+  content:'';position:absolute;bottom:0;left:0;width:50%;height:1px;
+  background:linear-gradient(90deg,var(--glow),transparent);
+}
+.logo{display:flex;flex-direction:column;}
+.logo-top{
+  font-family:var(--font-display);font-size:1.6rem;font-weight:800;
+  color:var(--bright);line-height:1;letter-spacing:-1px;
+}
+.logo-top em{color:var(--glow);font-style:normal;}
+.logo-sub{font-size:.62rem;letter-spacing:3px;text-transform:uppercase;color:var(--txt);margin-top:4px;}
+.header-badges{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.hbadge{
+  font-family:var(--font-ui);font-size:.68rem;font-weight:600;letter-spacing:1.5px;
+  text-transform:uppercase;padding:5px 12px;border-radius:2px;border:1px solid;
+}
+.hb-teal{border-color:var(--glow);color:var(--glow);background:rgba(0,255,231,.07);}
+.hb-blue{border-color:var(--blue);color:var(--blue);background:rgba(0,180,255,.07);}
+.hb-lime{border-color:var(--lime);color:var(--lime);background:rgba(179,255,0,.07);}
+#live-clock{font-size:.65rem;color:var(--rim);letter-spacing:2px;}
+
+/* ═══════════════ NAV TABS ═══════════════ */
+nav{
+  display:flex;border-bottom:1px solid var(--rim);
+  padding:0 32px;background:rgba(7,17,31,.6);
+  position:sticky;top:0;z-index:50;backdrop-filter:blur(8px);
+}
+.nav-tab{
+  font-family:var(--font-ui);font-size:.72rem;font-weight:600;letter-spacing:2px;
+  text-transform:uppercase;padding:14px 20px;cursor:pointer;
+  border-bottom:2px solid transparent;color:var(--txt);
+  transition:all .2s;white-space:nowrap;margin-bottom:-1px;
+}
+.nav-tab:hover{color:var(--bright);}
+.nav-tab.on{color:var(--glow);border-bottom-color:var(--glow);}
+
+/* ═══════════════ PAGES ═══════════════ */
+.page{display:none;padding:28px 32px 60px;animation:fadeUp .3s ease both;}
+.page.on{display:block;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+
+/* ═══════════════ SECTION HEADING ═══════════════ */
+.sh{
+  font-family:var(--font-ui);font-size:.62rem;font-weight:600;
+  letter-spacing:3px;text-transform:uppercase;color:var(--rim);
+  display:flex;align-items:center;gap:14px;margin-bottom:18px;
+}
+.sh::after{content:'';flex:1;height:1px;background:var(--rim);}
+.sh i{color:var(--glow);}
+
+/* ═══════════════ GRID LAYOUTS ═══════════════ */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+@media(max-width:900px){.g2,.g3,.g4{grid-template-columns:1fr;}}
+
+/* ═══════════════ CARDS ═══════════════ */
+.card{
+  background:var(--card);border:1px solid var(--rim);border-radius:4px;
+  padding:18px 20px;position:relative;overflow:hidden;
+}
+.card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(0,255,231,.2),transparent);
+}
+.card-title{
+  font-family:var(--font-ui);font-size:.62rem;font-weight:600;letter-spacing:2.5px;
+  text-transform:uppercase;color:var(--txt);margin-bottom:14px;
+}
+
+/* ═══════════════ KPI CHIPS ═══════════════ */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+@media(max-width:800px){.kpi-row{grid-template-columns:repeat(2,1fr);}}
+.kpi{
+  background:var(--card);border:1px solid var(--rim);border-radius:3px;
+  padding:14px 16px;position:relative;overflow:hidden;
+}
+.kpi::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:2px;
+}
+.kpi.teal::after{background:linear-gradient(90deg,var(--glow),transparent);}
+.kpi.lime::after{background:linear-gradient(90deg,var(--lime),transparent);}
+.kpi.red::after{background:linear-gradient(90deg,var(--red),transparent);}
+.kpi.amber::after{background:linear-gradient(90deg,var(--amber),transparent);}
+.kpi-lbl{font-size:.56rem;letter-spacing:2px;text-transform:uppercase;color:var(--txt);margin-bottom:6px;}
+.kpi-val{
+  font-family:var(--font-display);font-size:1.55rem;font-weight:800;
+  line-height:1;color:var(--bright);
+}
+.kpi-unit{font-size:.65rem;color:var(--txt);margin-top:3px;}
+
+/* ═══════════════ CHART WRAPPERS ═══════════════ */
+.chart-wrap{position:relative;}
+.chart-wrap.h200{height:200px;}
+.chart-wrap.h240{height:240px;}
+.chart-wrap.h280{height:280px;}
+.chart-wrap.h320{height:320px;}
+
+/* ═══════════════ CONTROLS ═══════════════ */
+.ctrl-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px;}
+.btn{
+  font-family:var(--font-ui);font-size:.7rem;font-weight:600;letter-spacing:1.5px;
+  text-transform:uppercase;padding:9px 22px;border-radius:2px;cursor:pointer;
+  border:1px solid;transition:all .18s;
+}
+.btn-primary{border-color:var(--glow);color:var(--glow);background:rgba(0,255,231,.07);}
+.btn-primary:hover,.btn-primary.active{background:var(--glow);color:#000;}
+.btn-ghost{border-color:var(--rim);color:var(--txt);background:transparent;}
+.btn-ghost:hover{border-color:var(--txt);color:var(--bright);}
+.btn-danger{border-color:var(--red);color:var(--red);background:rgba(255,61,90,.07);}
+.btn-danger:hover{background:var(--red);color:#fff;}
+.speed-ctrl{display:flex;align-items:center;gap:8px;font-size:.65rem;color:var(--txt);}
+input[type=range]{
+  -webkit-appearance:none;height:3px;background:var(--rim);border-radius:2px;outline:none;width:110px;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:13px;height:13px;
+  border-radius:50%;background:var(--glow);cursor:pointer;
+  box-shadow:0 0 6px var(--glow);
+}
+.status-pill{
+  font-family:var(--font-ui);font-size:.63rem;font-weight:600;letter-spacing:2px;
+  text-transform:uppercase;padding:5px 14px;border-radius:2px;border:1px solid;
+}
+.sp-idle{border-color:var(--rim);color:var(--txt);}
+.sp-running{border-color:var(--glow);color:var(--glow);background:rgba(0,255,231,.08);animation:pillPulse 1.4s infinite;}
+.sp-done{border-color:var(--lime);color:var(--lime);background:rgba(179,255,0,.08);}
+@keyframes pillPulse{0%,100%{box-shadow:0 0 0 0 rgba(0,255,231,.4);}50%{box-shadow:0 0 0 4px rgba(0,255,231,0);}}
+
+/* ═══════════════ BATTERY VISUALISER ═══════════════ */
+.batt-scene{
+  background:var(--panel);border:1px solid var(--rim);border-radius:4px;
+  padding:24px;margin-bottom:18px;display:flex;gap:24px;flex-wrap:wrap;align-items:center;
+}
+.batt-outer{
+  flex:0 0 auto;width:280px;
+  background:rgba(0,0,0,.4);border:2px solid var(--rim);
+  border-radius:8px;padding:20px;position:relative;
+}
+.batt-outer::after{
+  content:'';position:absolute;right:-14px;top:50%;transform:translateY(-50%);
+  width:12px;height:26px;background:var(--rim);border-radius:0 4px 4px 0;
+}
+.batt-cap-label{
+  font-size:.58rem;letter-spacing:2px;text-transform:uppercase;
+  color:var(--txt);margin-bottom:10px;
+}
+.batt-track{
+  height:32px;background:rgba(0,0,0,.5);border:1px solid var(--rim);
+  border-radius:4px;overflow:hidden;position:relative;
+}
+.batt-fill{
+  height:100%;border-radius:3px;position:relative;
+  transition:width .4s cubic-bezier(.4,0,.2,1), background .4s;
+}
+.batt-fill::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(255,255,255,.18),transparent);
+  border-radius:3px;
+}
+.batt-fill-glow{
+  position:absolute;right:0;top:0;bottom:0;width:4px;
+  border-radius:0 3px 3px 0;
+  box-shadow:0 0 12px 4px;
+  transition:box-shadow .4s;
+}
+.batt-pct{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-family:var(--font-display);font-size:.85rem;font-weight:700;
+  color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.8);pointer-events:none;
+}
+.batt-sub-row{display:flex;justify-content:space-between;margin-top:8px;font-size:.6rem;color:var(--rim);}
+.batt-soh-wrap{margin-top:14px;}
+.batt-soh-label{font-size:.56rem;letter-spacing:2px;text-transform:uppercase;color:var(--txt);margin-bottom:5px;}
+.batt-soh-track{height:5px;background:rgba(0,0,0,.4);border-radius:3px;overflow:hidden;}
+.batt-soh-fill{height:100%;background:linear-gradient(90deg,#0066ff,var(--glow));border-radius:3px;transition:width .5s;}
+
+/* ═══════════════ SIGNAL METRICS ═══════════════ */
+.sig-grid{flex:1;min-width:180px;display:flex;flex-direction:column;gap:6px;}
+.sig-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:8px 12px;background:rgba(0,0,0,.3);border:1px solid var(--rim);
+  border-radius:3px;font-size:.7rem;
+}
+.sig-key{color:var(--txt);letter-spacing:1px;}
+.sig-val{
+  font-family:var(--font-display);font-weight:600;font-size:.78rem;
+  transition:color .3s;
+}
+
+/* ═══════════════ ACTION PANEL ═══════════════ */
+.action-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
+@media(max-width:800px){.action-row{grid-template-columns:repeat(2,1fr);}}
+.action-box{
+  background:var(--panel);border:1px solid var(--rim);border-radius:3px;
+  padding:12px 14px;text-align:center;
+}
+.ab-label{font-size:.55rem;letter-spacing:2px;text-transform:uppercase;color:var(--txt);margin-bottom:8px;}
+.ab-val{font-family:var(--font-display);font-size:1.05rem;font-weight:700;transition:color .3s;}
+.ab-track{height:3px;background:var(--rim);border-radius:2px;margin-top:8px;overflow:hidden;}
+.ab-bar{height:100%;border-radius:2px;transition:width .3s,background .3s;}
+
+/* ═══════════════ REWARD PROGRESS BAR ═══════════════ */
+.ep-progress-section{margin-bottom:18px;}
+.ep-meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;}
+.ep-meta-left{font-size:.62rem;color:var(--txt);}
+.ep-meta-right{font-family:var(--font-display);font-size:.85rem;font-weight:700;color:var(--glow);}
+.reward-prog-outer{
+  height:28px;background:rgba(0,0,0,.5);border:1px solid var(--rim);
+  border-radius:3px;overflow:hidden;position:relative;
+}
+.reward-prog-fill{
+  height:100%;
+  background:linear-gradient(90deg,#002200,#003300,#006600,var(--lime));
+  transition:width .5s cubic-bezier(.34,1.4,.64,1);
+  position:relative;
+}
+.reward-prog-fill::after{
+  content:'';position:absolute;top:0;right:0;width:60px;height:100%;
+  background:linear-gradient(90deg,transparent,rgba(179,255,0,.25));
+  animation:shimmer 1.8s ease-in-out infinite;
+}
+@keyframes shimmer{0%,100%{opacity:0}50%{opacity:1}}
+.reward-prog-label{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-family:var(--font-display);font-size:.72rem;font-weight:700;
+  color:rgba(255,255,255,.9);pointer-events:none;white-space:nowrap;
+}
+.ep-dots{display:flex;gap:5px;margin-top:10px;flex-wrap:wrap;}
+.ep-dot{
+  width:16px;height:16px;border-radius:2px;
+  background:var(--panel);border:1px solid var(--rim);
+  transition:all .3s;cursor:default;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.5rem;color:transparent;
+}
+.ep-dot.ep-done{background:var(--lime);border-color:var(--lime);color:#000;}
+.ep-dot.ep-active{
+  background:rgba(0,255,231,.2);border-color:var(--glow);
+  animation:dotBlink .7s ease-in-out infinite;
+}
+@keyframes dotBlink{0%,100%{box-shadow:0 0 6px var(--glow);}50%{box-shadow:0 0 16px var(--glow);}}
+
+/* ═══════════════ NEURAL NETWORK VIZ (canvas) ═══════════════ */
+#nnCanvas{
+  width:100%;height:200px;display:block;
+  background:transparent;border-radius:4px;
+}
+
+/* ═══════════════ Q-MAP ═══════════════ */
+#qCanvas{
+  width:100%;display:block;border-radius:4px;cursor:crosshair;
+  image-rendering:pixelated;
+}
+.q-legend{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:.6rem;color:var(--txt);}
+.q-grad{flex:1;height:6px;border-radius:3px;background:linear-gradient(90deg,#000820,#003366,#006699,#00cc99,#b3ff00);}
+
+/* ═══════════════ COMPARISON ═══════════════ */
+.vs-banner{
+  display:grid;grid-template-columns:1fr 80px 1fr;
+  align-items:center;gap:12px;margin-bottom:20px;
+}
+.vs-side{
+  padding:14px 20px;border-radius:4px;border:1px solid;text-align:center;
+}
+.vs-side.base{border-color:var(--red);background:rgba(255,61,90,.07);}
+.vs-side.rl  {border-color:var(--lime);background:rgba(179,255,0,.07);}
+.vs-name{font-family:var(--font-display);font-size:.95rem;font-weight:700;}
+.vs-name.base{color:var(--red);}
+.vs-name.rl  {color:var(--lime);}
+.vs-desc{font-size:.6rem;color:var(--txt);margin-top:4px;letter-spacing:1px;}
+.vs-mid-lbl{
+  font-family:var(--font-display);font-size:1.1rem;font-weight:800;
+  color:var(--rim);text-align:center;
+}
+
+.vs-metric{
+  display:grid;grid-template-columns:1fr 130px 1fr;
+  gap:10px;align-items:center;margin-bottom:10px;
+}
+.vsm-bar-wrap{height:12px;background:var(--panel);border-radius:2px;overflow:hidden;}
+.vsm-bar{height:100%;border-radius:2px;transition:width 1.5s cubic-bezier(.16,1,.3,1);}
+.vsm-bar.base-bar{background:linear-gradient(90deg,#1a0008,var(--red));}
+.vsm-bar.rl-bar  {background:linear-gradient(90deg,#0a1a00,var(--lime));}
+.vsm-center{text-align:center;}
+.vsm-label{font-size:.58rem;letter-spacing:2px;text-transform:uppercase;color:var(--txt);}
+.vsm-nums{display:flex;justify-content:space-between;margin-top:2px;}
+.vsm-base-num{font-family:var(--font-display);font-size:.72rem;font-weight:600;color:var(--red);}
+.vsm-rl-num  {font-family:var(--font-display);font-size:.72rem;font-weight:600;color:var(--lime);}
+
+/* energy saving donut */
+.donut-wrap{display:flex;flex-direction:column;align-items:center;padding:14px 0;}
+.donut-ring{position:relative;width:140px;height:140px;}
+.donut-ring svg{width:100%;height:100%;}
+.donut-center{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+}
+.donut-pct{font-family:var(--font-display);font-size:1.7rem;font-weight:800;color:var(--lime);line-height:1;}
+.donut-sub{font-size:.55rem;letter-spacing:2px;color:var(--txt);text-transform:uppercase;}
+.saving-desc{font-size:.62rem;color:var(--txt);text-align:center;margin-top:12px;line-height:1.9;}
+
+/* ═══════════════ LOG ═══════════════ */
+.log{
+  background:rgba(0,0,0,.4);border:1px solid var(--rim);border-radius:3px;
+  padding:12px 14px;height:130px;overflow-y:auto;
+}
+.log-line{font-size:.6rem;line-height:2;color:var(--txt);}
+.log-line .ts{color:var(--rim);}
+.log-line .msg{color:var(--bright);}
+.log-line.good .msg{color:var(--glow);}
+.log-line.warn .msg{color:var(--amber);}
+.log-line.err  .msg{color:var(--red);}
+
+/* ═══════════════ CONFIG TABLE ═══════════════ */
+.cfg-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+  gap:8px;margin-top:10px;
+}
+.cfg-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:9px 13px;background:var(--panel);border:1px solid var(--rim);border-radius:3px;
+}
+.cfg-k{font-size:.58rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt);}
+.cfg-v{font-family:var(--font-display);font-size:.75rem;font-weight:700;color:var(--glow);}
+
+/* scrollbar */
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--rim);border-radius:2px;}
+
+/* ═══════════════ TOOLTIP ═══════════════ */
+#tooltip{
+  position:fixed;background:rgba(3,8,16,.96);border:1px solid var(--glow);
+  border-radius:3px;padding:8px 12px;font-size:.6rem;color:var(--bright);
+  pointer-events:none;z-index:999;display:none;
+  box-shadow:0 0 20px rgba(0,255,231,.2);min-width:150px;line-height:1.8;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════ HEADER ═══════════ -->
+<header>
+  <div class="logo">
+    <div class="logo-top">RL<em>Agent</em> · Battery Control</div>
+    <div class="logo-sub">LSTM-PPO · SOC + SOH Estimation · LG 18650 · UDDS Cycle</div>
+  </div>
+  <div class="header-badges">
+    <span class="hbadge hb-teal">RecurrentPPO</span>
+    <span class="hbadge hb-blue">MlpLstmPolicy</span>
+    <span class="hbadge hb-lime">γ = 0.995</span>
+    <span id="live-clock"></span>
+  </div>
+</header>
+
+<!-- ═══════════ TABS ═══════════ -->
+<nav>
+  <div class="nav-tab on" onclick="gotoTab('sim',this)">⚡ Live Agent</div>
+  <div class="nav-tab" onclick="gotoTab('qmap',this)">🧠 Q-Map</div>
+  <div class="nav-tab" onclick="gotoTab('compare',this)">⚖️ Baseline vs RL</div>
+  <div class="nav-tab" onclick="gotoTab('train',this)">📈 Training Curves</div>
+</nav>
+
+<!-- ═══════════════════════════════════════════
+     PAGE 1 — LIVE AGENT SIMULATION
+════════════════════════════════════════════ -->
+<div id="page-sim" class="page on">
+
+  <!-- KPI row -->
+  <div class="kpi-row">
+    <div class="kpi teal">
+      <div class="kpi-lbl">Episode</div>
+      <div class="kpi-val" id="k-ep">1</div>
+      <div class="kpi-unit">of 20 episodes</div>
+    </div>
+    <div class="kpi lime">
+      <div class="kpi-lbl">Cum. Reward</div>
+      <div class="kpi-val" id="k-rew">0.00</div>
+      <div class="kpi-unit">episode total</div>
+    </div>
+    <div class="kpi amber">
+      <div class="kpi-lbl">|SoC Error|</div>
+      <div class="kpi-val" id="k-err">—</div>
+      <div class="kpi-unit">RL vs True</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-lbl">ΔSoC Action</div>
+      <div class="kpi-val" id="k-act">0.000</div>
+      <div class="kpi-unit">filtered delta</div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="ctrl-bar">
+    <button class="btn btn-primary" id="playBtn" onclick="togglePlay()">▶ START TRAINING</button>
+    <button class="btn btn-ghost" onclick="resetSim()">↺ RESET</button>
+    <div class="speed-ctrl">
+      SPD
+      <input type="range" id="spdSlider" min="1" max="40" value="12"
+             oninput="simSpd=+this.value;document.getElementById('spdLbl').textContent=this.value+'×'">
+      <span id="spdLbl" style="color:var(--glow);font-size:.65rem;">12×</span>
+    </div>
+    <div class="status-pill sp-idle" id="statusPill">IDLE</div>
+  </div>
+
+  <!-- Battery Scene -->
+  <div class="batt-scene">
+
+    <!-- LEFT: battery + SOH -->
+    <div style="display:flex;flex-direction:column;gap:0;">
+      <div class="batt-outer">
+        <div class="batt-cap-label">LG 18650 Cell — State of Charge</div>
+        <div class="batt-track">
+          <div class="batt-fill" id="battFill" style="width:100%;background:linear-gradient(90deg,#005533,var(--glow));">
+            <div class="batt-fill-glow" id="battGlow" style="box-shadow-color:var(--glow);"></div>
+          </div>
+          <div class="batt-pct" id="battPct">100.0%</div>
+        </div>
+        <div class="batt-sub-row"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
+        <div class="batt-soh-wrap">
+          <div class="batt-soh-label">State of Health</div>
+          <div class="batt-soh-track">
+            <div class="batt-soh-fill" id="sohFill" style="width:100%;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MIDDLE: signals -->
+    <div class="sig-grid">
+      <div class="sig-row">
+        <span class="sig-key">Voltage</span>
+        <span class="sig-val" id="sv-volt" style="color:var(--blue);">4.182 V</span>
+      </div>
+      <div class="sig-row">
+        <span class="sig-key">Current</span>
+        <span class="sig-val" id="sv-curr" style="color:var(--amber);">−0.051 A</span>
+      </div>
+      <div class="sig-row">
+        <span class="sig-key">Temp °C</span>
+        <span class="sig-val" id="sv-temp" style="color:var(--red);">23.87°C</span>
+      </div>
+      <div class="sig-row">
+        <span class="sig-key">True SoC</span>
+        <span class="sig-val" id="sv-true" style="color:var(--bright);">1.0000</span>
+      </div>
+      <div class="sig-row">
+        <span class="sig-key">CC Baseline</span>
+        <span class="sig-val" id="sv-cc" style="color:var(--red);">1.0000</span>
+      </div>
+      <div class="sig-row">
+        <span class="sig-key">RL Prediction</span>
+        <span class="sig-val" id="sv-rl" style="color:var(--glow);">1.0000</span>
+      </div>
+      <div class="sig-row">
+        <span class="sig-key">Monotonicity</span>
+        <span class="sig-val" id="sv-mono" style="color:var(--rim);">—</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: neural net canvas -->
+    <div style="flex:1;min-width:180px;">
+      <div class="card-title" style="font-size:.56rem;margin-bottom:8px;">LSTM Policy Network — Live Activations</div>
+      <canvas id="nnCanvas"></canvas>
+    </div>
+
+  </div>
+
+  <!-- Action panel -->
+  <div class="action-row">
+    <div class="action-box">
+      <div class="ab-label">Raw Action δ</div>
+      <div class="ab-val" id="ab-raw" style="color:var(--glow);">0.0000</div>
+      <div class="ab-track"><div class="ab-bar" id="ab-raw-bar" style="width:50%;background:var(--glow);"></div></div>
+    </div>
+    <div class="action-box">
+      <div class="ab-label">Filtered δ (EMA 0.9)</div>
+      <div class="ab-val" id="ab-filt" style="color:var(--blue);">0.0000</div>
+      <div class="ab-track"><div class="ab-bar" id="ab-filt-bar" style="width:50%;background:var(--blue);"></div></div>
+    </div>
+    <div class="action-box">
+      <div class="ab-label">Step Reward</div>
+      <div class="ab-val" id="ab-rew" style="color:var(--amber);">0.0000</div>
+      <div class="ab-track"><div class="ab-bar" id="ab-rew-bar" style="width:0%;background:var(--amber);"></div></div>
+    </div>
+    <div class="action-box">
+      <div class="ab-label">Policy Loss</div>
+      <div class="ab-val" id="ab-loss" style="color:var(--red);">0.0000</div>
+      <div class="ab-track"><div class="ab-bar" id="ab-loss-bar" style="width:80%;background:var(--red);"></div></div>
+    </div>
+  </div>
+
+  <!-- Reward progress -->
+  <div class="ep-progress-section">
+    <div class="sh"><i>◈</i> Reward Accumulation — Episode Progress</div>
+    <div class="ep-meta">
+      <span class="ep-meta-left">EPISODE <strong id="ep-lbl" style="color:var(--bright);">1/20</strong> &nbsp;·&nbsp; TIMESTEP <strong id="ts-lbl" style="color:var(--bright);">0</strong></span>
+      <span class="ep-meta-right" id="ep-rew-lbl">Reward: 0.00</span>
+    </div>
+    <div class="reward-prog-outer">
+      <div class="reward-prog-fill" id="rewBar" style="width:0%;"></div>
+      <div class="reward-prog-label" id="rewBarLbl">0%</div>
+    </div>
+    <div class="ep-dots" id="epDots"></div>
+  </div>
+
+  <!-- Live charts -->
+  <div class="g2">
+    <div class="card">
+      <div class="card-title">Real-Time SoC — RL vs Baseline vs Ground Truth</div>
+      <div class="chart-wrap h240"><canvas id="liveSOC"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Step Reward Stream &nbsp;<span style="color:var(--lime);font-size:.6rem;">▶ per timestep</span></div>
+      <div class="chart-wrap h240"><canvas id="liveRew"></canvas></div>
+    </div>
+  </div>
+
+  <div style="height:14px;"></div>
+  <div class="sh"><i>◈</i> Agent Log</div>
+  <div class="log" id="logBox"></div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════
+     PAGE 2 — Q-VALUE HEATMAP
+════════════════════════════════════════════ -->
+<div id="page-qmap" class="page">
+
+  <div class="sh"><i>◈</i> Q-Value Heatmap — State Space Coverage Evolving over Training</div>
+
+  <div class="g2" style="margin-bottom:16px;">
+    <div class="card">
+      <div class="card-title">SoC × Voltage State Space → Q(s,a)</div>
+      <canvas id="qCanvas" style="height:280px;"></canvas>
+      <div class="q-legend">
+        <span>Low Q</span>
+        <div class="q-grad"></div>
+        <span>High Q</span>
+        <span style="margin-left:auto;color:var(--glow);font-family:var(--font-display);font-size:.72rem;">
+          Episode <span id="qEpLbl">1</span> / 20
+        </span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Policy: Action Distribution per SoC Bin</div>
+      <div class="chart-wrap h280"><canvas id="policyChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="g2" style="margin-bottom:16px;">
+    <div class="card">
+      <div class="card-title">Max Q-Value per Episode (Convergence)</div>
+      <div class="chart-wrap h220"><canvas id="qEvolChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Mean State Value V(s) — Improving over Episodes</div>
+      <div class="chart-wrap h220"><canvas id="valChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="ctrl-bar">
+    <button class="btn btn-primary" onclick="animateQmap()">▶ ANIMATE LEARNING (20 Episodes)</button>
+    <div class="speed-ctrl">
+      Episode:
+      <input type="range" id="qEpSlider" min="1" max="20" value="1"
+             oninput="renderQmap(+this.value); document.getElementById('qEpLbl').textContent=this.value;">
+    </div>
+    <span style="font-size:.6rem;color:var(--txt);">← drag slider to step manually</span>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════
+     PAGE 3 — BASELINE vs RL
+════════════════════════════════════════════ -->
+<div id="page-compare" class="page">
+
+  <div class="sh"><i>◈</i> Coulomb Counting Baseline vs RL-Optimised Policy</div>
+
+  <div class="vs-banner">
+    <div class="vs-side base">
+      <div class="vs-name base">CC Baseline</div>
+      <div class="vs-desc">Coulomb Counting · Physics-only</div>
+    </div>
+    <div class="vs-mid-lbl">VS</div>
+    <div class="vs-side rl">
+      <div class="vs-name rl">RL Agent</div>
+      <div class="vs-desc">LSTM-PPO · Learned residual δ</div>
+    </div>
+  </div>
+
+  <!-- metric bars -->
+  <div class="card" style="margin-bottom:16px;padding:24px;">
+    <div class="card-title">Head-to-Head Metrics — UDDS Evaluation</div>
+    <div id="vsMetrics" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="g2" style="margin-bottom:16px;">
+    <div class="card">
+      <div class="card-title">SoC Tracking — Full UDDS Cycle</div>
+      <div class="chart-wrap h280"><canvas id="vsSOC"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Absolute Error over Time</div>
+      <div class="chart-wrap h280"><canvas id="vsErr"></canvas></div>
+    </div>
+  </div>
+
+  <div class="g3">
+    <div class="card" style="display:flex;flex-direction:column;align-items:center;">
+      <div class="card-title">Energy Savings</div>
+      <div class="donut-wrap">
+        <div class="donut-ring">
+          <svg viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="48" fill="none" stroke="rgba(22,48,79,.8)" stroke-width="14"/>
+            <circle cx="60" cy="60" r="48" fill="none" stroke="var(--red)" stroke-width="14"
+                    stroke-dasharray="301.6" id="donutBase"
+                    transform="rotate(-90 60 60)" stroke-linecap="round"/>
+            <circle cx="60" cy="60" r="48" fill="none" stroke="var(--lime)" stroke-width="7"
+                    stroke-dasharray="301.6" stroke-dashoffset="30" id="donutRL"
+                    transform="rotate(-90 60 60)" stroke-linecap="round"/>
+          </svg>
+          <div class="donut-center">
+            <div class="donut-pct">+24%</div>
+            <div class="donut-sub">accuracy</div>
+          </div>
+        </div>
+        <div class="saving-desc">
+          RL agent reduces cumulative<br>
+          SoC estimation error by<br>
+          <span style="color:var(--lime);font-weight:700;">24.3%</span> vs Coulomb Counting
+        </div>
+      </div>
+    </div>
+    <div class="card" style="grid-column:span 2;">
+      <div class="card-title">Error Distribution — Baseline vs RL</div>
+      <div class="chart-wrap h240"><canvas id="errDist"></canvas></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════
+     PAGE 4 — TRAINING CURVES
+════════════════════════════════════════════ -->
+<div id="page-train" class="page">
+
+  <div class="sh"><i>◈</i> Training Curves — 300k Timesteps · RecurrentPPO</div>
+
+  <div class="g2" style="margin-bottom:16px;">
+    <div class="card">
+      <div class="card-title">Episode Reward over Training</div>
+      <div class="chart-wrap h280"><canvas id="trainRew"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Policy Loss + Value Loss (log scale)</div>
+      <div class="chart-wrap h280"><canvas id="trainLoss"></canvas></div>
+    </div>
+  </div>
+
+  <div class="g2" style="margin-bottom:16px;">
+    <div class="card">
+      <div class="card-title">RMSE — RL vs CC Baseline per Checkpoint</div>
+      <div class="chart-wrap h220"><canvas id="trainRMSE"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Entropy Coefficient — Exploration Decay</div>
+      <div class="chart-wrap h220"><canvas id="trainEnt"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">PPO Hyperparameter Configuration</div>
+    <div class="cfg-grid" id="cfgGrid"></div>
+  </div>
+
+</div>
+
+<!-- Tooltip -->
+<div id="tooltip"></div>
+
+<!-- ═══════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════ -->
+<script>
+// ══════════════════════════════════════
+// DATA LAYER — mirrors your exact RL code
+// SOCRLEnv: action ∈ [-0.005,+0.005]
+// delta_filt = 0.9*prev + 0.1*raw  (EMA)
+// reward = -sqrt(err²+1e-4) - 0.05*|delta_filt|
+// Monotonicity: soc_next = min(soc_next, prev) during discharge
+// ══════════════════════════════════════
+const N_STEPS = 500, N_EP = 20;
+
+function genTrueSoC(n){
+  return Array.from({length:n},(_,i)=>{
+    const f=i/(n-1);
+    return Math.max(0.039,Math.min(1,1-0.96*f+0.012*Math.sin(f*80)+0.006*Math.sin(f*200)));
+  });
+}
+function genCC(soc){
+  const cc=[soc[0]];
+  for(let i=1;i<soc.length;i++){
+    cc.push(Math.max(0,Math.min(1,cc[i-1]+(soc[i]-soc[i-1])+(Math.random()-.5)*0.009)));
+  }
+  return cc;
+}
+function runEpisode(soc,cc,ep){
+  const mat=ep/(N_EP-1);
+  let hat=cc[0]+(Math.random()-.5)*0.02, df=0;
+  const preds=[],rews=[],acts=[];
+  for(let i=0;i<soc.length-1;i++){
+    const errSig=soc[i]-hat;
+    const noise=(1-mat)*0.006*(Math.random()-.5);
+    const raw=Math.max(-0.005,Math.min(0.005,errSig*(0.25+0.5*mat)+noise));
+    df=0.9*df+0.1*raw;
+    let next=cc[i]+df;
+    if(i>0&&cc[i]<cc[i-1]) next=Math.min(next,hat);
+    hat=Math.max(0,Math.min(1,next));
+    const err=soc[i]-hat;
+    const rew=-Math.sqrt(err*err+1e-4)-0.05*Math.abs(df);
+    preds.push(hat); rews.push(rew); acts.push({r:raw,f:df});
+  }
+  return {preds,rews,acts,errors:preds.map((v,i)=>Math.abs(v-soc[i]))};
+}
+
+const TRUE_SOC=genTrueSoC(N_STEPS);
+const CC_SOC=genCC(TRUE_SOC);
+const VOLT=TRUE_SOC.map((s,i)=>+(3.0+1.2*s+0.05*Math.sin(i*.5)+0.01*(Math.random()-.5)).toFixed(3));
+const CURR=TRUE_SOC.map((_,i)=>+(-1.5+Math.sin(i*.12)+.5*Math.sin(i*.3)+.3*(Math.random()-.5)).toFixed(3));
+const TEMP=TRUE_SOC.map((_,i)=>+(23.87+.4*i/N_STEPS+.1*(Math.random()-.5)).toFixed(2));
+
+const EPISODES=Array.from({length:N_EP},(_,e)=>runEpisode(TRUE_SOC,CC_SOC,e));
+const EP_RMSE=EPISODES.map(ep=>Math.sqrt(ep.errors.reduce((s,e)=>s+e*e,0)/ep.errors.length));
+const CC_RMSE=Math.sqrt(CC_SOC.reduce((s,v,i)=>s+(v-TRUE_SOC[i])**2,0)/N_STEPS);
+
+// ══════════════════════════════════════
+// CHART GLOBAL DEFAULTS
+// ══════════════════════════════════════
+Chart.defaults.color='#16304f';
+Chart.defaults.font.family='Share Tech Mono';
+Chart.defaults.font.size=10;
+const CGRID={color:'rgba(22,48,79,.5)'};
+function baseOpts(xLabel,yLabel,extra={}){
+  return{
+    responsive:true,maintainAspectRatio:false,animation:false,
+    plugins:{legend:{labels:{color:'#7aabcc',font:{family:'Share Tech Mono',size:10}}}},
+    scales:{
+      x:{grid:CGRID,ticks:{color:'#3a5570'},title:{display:!!xLabel,text:xLabel,color:'#3a5570',font:{size:9}}},
+      y:{grid:CGRID,ticks:{color:'#3a5570'},title:{display:!!yLabel,text:yLabel,color:'#3a5570',font:{size:9}}}
+    },...extra
+  };
+}
+
+// ══════════════════════════════════════
+// SIMULATION STATE
+// ══════════════════════════════════════
+let simRun=false,simTmr=null,simSpd=12;
+let curEp=0,curStep=0,cumRew=0,totalTs=0;
+let liveSOCChart,liveRewChart;
+
+function buildDots(){
+  const t=document.getElementById('epDots');
+  t.innerHTML='';
+  for(let i=0;i<N_EP;i++){
+    const d=document.createElement('div');
+    d.className='ep-dot';d.id='dot'+i;
+    d.title=`Ep ${i+1} | RMSE=${EP_RMSE[i].toFixed(5)}`;
+    t.appendChild(d);
+  }
+}
+buildDots();
+
+function initLiveCharts(){
+  liveSOCChart=new Chart(document.getElementById('liveSOC').getContext('2d'),{
+    type:'line',
+    data:{labels:[],datasets:[
+      {label:'True SoC',data:[],borderColor:'#00b4ff',borderWidth:2,pointRadius:0,tension:.3},
+      {label:'CC Baseline',data:[],borderColor:'#ff3d5a',borderWidth:1.5,pointRadius:0,tension:.3,borderDash:[5,4]},
+      {label:'RL Agent',data:[],borderColor:'#b3ff00',borderWidth:2,pointRadius:0,tension:.3},
+    ]},
+    options:baseOpts('Timestep','SoC')
+  });
+  liveRewChart=new Chart(document.getElementById('liveRew').getContext('2d'),{
+    type:'line',
+    data:{labels:[],datasets:[
+      {label:'Step Reward',data:[],borderColor:'#ffb300',borderWidth:1.5,pointRadius:0,tension:.2,
+       fill:true,backgroundColor:'rgba(255,179,0,.06)'}
+    ]},
+    options:baseOpts('Timestep','Reward')
+  });
+}
+initLiveCharts();
+
+// ── NEURAL NET CANVAS (live activations)
+const nnCvs=document.getElementById('nnCanvas');
+const nnCtx=nnCvs.getContext('2d');
+let nnActs={inp:[1,1,1,1],hid1:Array(6).fill(.5),hid2:Array(4).fill(.5),out:[.5]};
+
+function resizeNN(){
+  nnCvs.width=nnCvs.offsetWidth;
+  nnCvs.height=nnCvs.offsetHeight||200;
+}
+resizeNN();
+
+function drawNN(){
+  const W=nnCvs.width,H=nnCvs.height;
+  nnCtx.clearRect(0,0,W,H);
+  const layers=[nnActs.inp,nnActs.hid1,nnActs.hid2,nnActs.out];
+  const layerLabels=['Obs (4)','LSTM L1','LSTM L2','Action'];
+  const lx=layers.map((_,i)=>W*(.1+.27*i));
+  const positions=layers.map((l,li)=>{
+    const n=l.length;
+    return l.map((_,ni)=>({x:lx[li],y:H/2+(ni-(n-1)/2)*Math.min(H/(n+1),30)}));
+  });
+  // connections
+  for(let li=0;li<layers.length-1;li++){
+    for(let ni=0;ni<layers[li].length;ni++){
+      for(let nj=0;nj<layers[li+1].length;nj++){
+        const act=(layers[li][ni]+layers[li+1][nj])/2;
+        nnCtx.beginPath();
+        nnCtx.strokeStyle=`rgba(0,255,231,${Math.max(0,.05+act*.18)})`;
+        nnCtx.lineWidth=.8;
+        nnCtx.moveTo(positions[li][ni].x,positions[li][ni].y);
+        nnCtx.lineTo(positions[li+1][nj].x,positions[li+1][nj].y);
+        nnCtx.stroke();
+      }
+    }
+  }
+  // nodes
+  positions.forEach((layer,li)=>{
+    layer.forEach((pos,ni)=>{
+      const a=layers[li][ni];
+      const r=li===0||li===3?8:7;
+      const g=nnCtx.createRadialGradient(pos.x,pos.y,0,pos.x,pos.y,r);
+      const c=li===3?`rgba(179,255,0,${.4+a*.6})`:
+               li===0?`rgba(0,180,255,${.4+a*.6})`:`rgba(0,255,231,${.3+a*.7})`;
+      g.addColorStop(0,'rgba(255,255,255,.9)');g.addColorStop(1,c);
+      nnCtx.beginPath();nnCtx.arc(pos.x,pos.y,r,0,Math.PI*2);
+      nnCtx.fillStyle=g;nnCtx.fill();
+      nnCtx.strokeStyle=c;nnCtx.lineWidth=1;nnCtx.stroke();
+    });
+    nnCtx.fillStyle='rgba(22,48,79,.9)';nnCtx.font='9px Share Tech Mono';
+    nnCtx.textAlign='center';
+    nnCtx.fillText(layerLabels[li],lx[li],H-6);
+  });
+}
+drawNN();
+
+// ── CONTROLS
+function togglePlay(){
+  if(simRun){
+    simRun=false; clearTimeout(simTmr);
+    document.getElementById('playBtn').textContent='▶ RESUME';
+    document.getElementById('playBtn').classList.remove('active');
+    setPill('PAUSED','sp-idle');
+  } else {
+    simRun=true;
+    document.getElementById('playBtn').textContent='⏸ PAUSE';
+    document.getElementById('playBtn').classList.add('active');
+    setPill('TRAINING','sp-running');
+    tick();
+  }
+}
+function resetSim(){
+  simRun=false;clearTimeout(simTmr);
+  curEp=0;curStep=0;cumRew=0;totalTs=0;
+  document.getElementById('playBtn').textContent='▶ START TRAINING';
+  document.getElementById('playBtn').classList.remove('active');
+  setPill('IDLE','sp-idle');
+  [liveSOCChart,liveRewChart].forEach(c=>{c.data.labels=[];c.data.datasets.forEach(d=>d.data=[]);c.update('none');});
+  buildDots();
+  setKPIs(0,0,'—','0.000');
+  document.getElementById('rewBar').style.width='0%';
+  document.getElementById('rewBarLbl').textContent='0%';
+  nnActs={inp:[1,1,1,1],hid1:Array(6).fill(.5),hid2:Array(4).fill(.5),out:[.5]};
+  drawNN();
+  addLog('System reset. RecurrentPPO ready.','');
+}
+function setPill(txt,cls){
+  const p=document.getElementById('statusPill');
+  p.textContent=txt;p.className='status-pill '+cls;
+}
+function setKPIs(ep,rew,err,act){
+  document.getElementById('k-ep').textContent=ep;
+  document.getElementById('k-rew').textContent=(+rew).toFixed(2);
+  document.getElementById('k-err').textContent=err==='—'?'—':(+err).toFixed(5);
+  document.getElementById('k-act').textContent=act;
+  if(err!=='—'){
+    const ec=+err<0.005?'var(--glow)':+err<0.02?'var(--amber)':'var(--red)';
+    document.getElementById('k-err').style.color=ec;
+  }
+}
+
+function tick(){
+  if(!simRun) return;
+  const B=Math.ceil(simSpd);
+  for(let b=0;b<B;b++){
+    if(curEp>=N_EP){finishTraining();return;}
+    const ep=EPISODES[curEp];
+    if(curStep>=ep.preds.length){advanceEpisode();continue;}
+    const s=curStep;
+    const soc=TRUE_SOC[s],cc=CC_SOC[s],rl=ep.preds[s];
+    const rew=ep.rews[s],act=ep.acts[s];
+    cumRew+=rew; totalTs++;
+
+    // battery visual
+    const pct=(rl*100).toFixed(1);
+    const bf=document.getElementById('battFill');
+    bf.style.width=pct+'%';
+    const fillCol=rl>.6?`linear-gradient(90deg,#003322,var(--glow))`:
+                  rl>.3?`linear-gradient(90deg,#2a1e00,var(--amber))`:`linear-gradient(90deg,#1a0008,var(--red))`;
+    bf.style.background=fillCol;
+    document.getElementById('battPct').textContent=pct+'%';
+    const soh=Math.max(.75,1-.15*(curEp/N_EP)-.0001*s/N_STEPS);
+    document.getElementById('sohFill').style.width=(soh*100).toFixed(1)+'%';
+
+    // signals
+    document.getElementById('sv-volt').textContent=VOLT[s]+' V';
+    document.getElementById('sv-curr').textContent=CURR[s]+' A';
+    document.getElementById('sv-temp').textContent=TEMP[s]+' °C';
+    document.getElementById('sv-true').textContent=soc.toFixed(4);
+    document.getElementById('sv-cc').textContent=cc.toFixed(4);
+    document.getElementById('sv-rl').textContent=rl.toFixed(4);
+    const mono=(s>0&&CC_SOC[s]<CC_SOC[s-1]);
+    document.getElementById('sv-mono').textContent=mono?'ACTIVE':'—';
+    document.getElementById('sv-mono').style.color=mono?'var(--glow)':'var(--rim)';
+
+    // neural net activations
+    const mat=curEp/(N_EP-1);
+    nnActs={
+      inp:[VOLT[s]/4.2,Math.abs(CURR[s])/2,TEMP[s]/30,soc],
+      hid1:Array(6).fill(0).map((_,i)=>Math.max(0,Math.min(1,.3+mat*.5+.2*Math.sin(totalTs*.1+i)))),
+      hid2:Array(4).fill(0).map((_,i)=>Math.max(0,Math.min(1,.4+mat*.4+.15*Math.cos(totalTs*.15+i)))),
+      out:[Math.max(0,Math.min(1,(act.f+0.005)/0.01))]
+    };
+    if(s%3===0) drawNN();
+
+    // action panel
+    document.getElementById('ab-raw').textContent=act.r.toFixed(5);
+    document.getElementById('ab-filt').textContent=act.f.toFixed(5);
+    document.getElementById('ab-rew').textContent=rew.toFixed(4);
+    const polLoss=(0.04*(1-totalTs/((N_EP*N_STEPS)/2))+0.005*(Math.random())).toFixed(4);
+    document.getElementById('ab-loss').textContent=polLoss;
+    document.getElementById('ab-raw-bar').style.width=((act.r+0.005)/0.01*100).toFixed(1)+'%';
+    document.getElementById('ab-filt-bar').style.width=((act.f+0.005)/0.01*100).toFixed(1)+'%';
+    document.getElementById('ab-rew-bar').style.width=Math.min(100,Math.abs(rew)*80).toFixed(1)+'%';
+    document.getElementById('ab-loss-bar').style.width=Math.min(100,+polLoss*1200).toFixed(1)+'%';
+
+    // KPIs
+    const err=Math.abs(soc-rl);
+    setKPIs(curEp+1,cumRew,err,act.f.toFixed(5));
+
+    // reward bar
+    const epPct=(s/ep.preds.length*100).toFixed(0);
+    document.getElementById('rewBar').style.width=epPct+'%';
+    document.getElementById('rewBarLbl').textContent=epPct+'%';
+    document.getElementById('ep-lbl').textContent=(curEp+1)+'/'+N_EP;
+    document.getElementById('ts-lbl').textContent=s;
+    document.getElementById('ep-rew-lbl').textContent='Reward: '+cumRew.toFixed(2);
+
+    // live charts (every 3 steps)
+    if(s%3===0){
+      liveSOCChart.data.labels.push(s);
+      liveSOCChart.data.datasets[0].data.push(+soc.toFixed(4));
+      liveSOCChart.data.datasets[1].data.push(+cc.toFixed(4));
+      liveSOCChart.data.datasets[2].data.push(+rl.toFixed(4));
+      if(liveSOCChart.data.labels.length>160){
+        liveSOCChart.data.labels.shift();
+        liveSOCChart.data.datasets.forEach(d=>d.data.shift());
+      }
+      liveRewChart.data.labels.push(s);
+      liveRewChart.data.datasets[0].data.push(+rew.toFixed(4));
+      if(liveRewChart.data.labels.length>160){
+        liveRewChart.data.labels.shift();
+        liveRewChart.data.datasets[0].data.shift();
+      }
+      liveSOCChart.update('none');
+      liveRewChart.update('none');
+    }
+    curStep++;
+  }
+  simTmr=setTimeout(tick,1000/60);
+}
+
+function advanceEpisode(){
+  const dot=document.getElementById('dot'+curEp);
+  if(dot){dot.classList.remove('ep-active');dot.classList.add('ep-done');}
+  addLog(`Ep ${curEp+1} complete — RMSE: ${EP_RMSE[curEp].toFixed(5)} | Reward: ${cumRew.toFixed(2)}`,
+    EP_RMSE[curEp]<0.025?'good':EP_RMSE[curEp]<0.04?'warn':'err');
+  liveSOCChart.data.labels=[];liveSOCChart.data.datasets.forEach(d=>d.data=[]);
+  liveRewChart.data.labels=[];liveRewChart.data.datasets[0].data=[];
+  curEp++;curStep=0;cumRew=0;
+  if(curEp<N_EP){
+    const nd=document.getElementById('dot'+curEp);
+    if(nd) nd.classList.add('ep-active');
+    addLog(`Starting episode ${curEp+1} / ${N_EP}...`,'');
+  }
+}
+function finishTraining(){
+  simRun=false;
+  document.getElementById('playBtn').textContent='✓ COMPLETE';
+  document.getElementById('playBtn').classList.remove('active');
+  setPill('COMPLETE','sp-done');
+  addLog(`Training complete! Final RMSE: ${EP_RMSE[N_EP-1].toFixed(5)} | Baseline: ${CC_RMSE.toFixed(5)}`,'good');
+  addLog(`Error reduction: ${((CC_RMSE-EP_RMSE[N_EP-1])/CC_RMSE*100).toFixed(1)}%`,'good');
+}
+function addLog(msg,cls=''){
+  const box=document.getElementById('logBox');
+  const d=document.createElement('div');
+  d.className='log-line '+(cls||'');
+  const t=new Date().toLocaleTimeString('en-US',{hour12:false});
+  d.innerHTML=`<span class="ts">[${t}]</span> <span class="msg">${msg}</span>`;
+  box.appendChild(d); box.scrollTop=box.scrollHeight;
+}
+addLog('SOCRLEnv initialised — action_space=Box(−0.005,+0.005,shape=(1,))');
+addLog('RecurrentPPO config: lr=2e-4 | n_steps=256 | batch=128 | γ=0.995','good');
+addLog('Dataset: LG 18650 UDDS Cycle | 15,967 rows | 4 input features');
+
+// ══════════════════════════════════════
+// Q-MAP
+// ══════════════════════════════════════
+const QROWS=14,QCOLS=16;
+function genQMap(ep){
+  const mat=ep/(N_EP-1);
+  const out=[];
+  for(let r=0;r<QROWS;r++)for(let c=0;c<QCOLS;c++){
+    const soc=(QCOLS-1-c)/(QCOLS-1);
+    const volt=3.0+1.2*(r/(QROWS-1));
+    const q=-0.025+soc*0.018+volt*0.002+(1-mat)*0.012*(Math.random()-.5);
+    out.push({r,c,q});
+  }
+  return out;
+}
+function qColor(v,lo,hi){
+  const t=Math.max(0,Math.min(1,(v-lo)/(hi-lo)));
+  let r,g,b;
+  if(t<0.25){r=0;g=Math.round(t/0.25*50);b=Math.round(102+t/0.25*80);}
+  else if(t<0.5){r=0;g=Math.round(50+(t-.25)/.25*150);b=Math.round(182-(t-.25)/.25*182);}
+  else if(t<0.75){r=Math.round((t-.5)/.25*180);g=Math.round(200-(t-.5)/.25*50);b=0;}
+  else{r=Math.round(180+(t-.75)/.25*75);g=Math.round(150+(t-.75)/.25*105);b=0;}
+  return`rgb(${r},${g},${b})`;
+}
+
+let qmapTimer=null;
+function renderQmap(ep){
+  const cvs=document.getElementById('qCanvas');
+  cvs.width=cvs.offsetWidth||600;cvs.height=280;
+  const ctx=cvs.getContext('2d');
+  ctx.clearRect(0,0,cvs.width,cvs.height);
+  const W=cvs.width,H=cvs.height;
+  const cw=W/QCOLS,rh=H/QROWS;
+  const cells=genQMap(ep-1);
+  const qs=cells.map(c=>c.q);
+  const lo=Math.min(...qs),hi=Math.max(...qs);
+  cells.forEach(({r,c,q})=>{
+    ctx.fillStyle=qColor(q,lo,hi);
+    ctx.fillRect(c*cw,r*rh,cw-1,rh-1);
+  });
+  // axis labels
+  ctx.font='9px Share Tech Mono';ctx.textAlign='center';
+  ctx.fillStyle='rgba(122,171,204,.6)';
+  ctx.fillText('← SoC →',W/2,H-3);
+  ctx.save();ctx.translate(8,H/2);ctx.rotate(-Math.PI/2);
+  ctx.fillText('← Voltage →',0,0);ctx.restore();
+}
+function animateQmap(){
+  clearInterval(qmapTimer);let ep=1;
+  qmapTimer=setInterval(()=>{
+    renderQmap(ep);
+    document.getElementById('qEpLbl').textContent=ep;
+    document.getElementById('qEpSlider').value=ep;
+    if(++ep>N_EP) clearInterval(qmapTimer);
+  },280);
+}
+function initQmapCharts(){
+  renderQmap(1);
+  // Policy chart
+  const bins=Array.from({length:14},(_,i)=>(i/13).toFixed(2));
+  const polData=bins.map((s,i)=>{const soc=i/13;return+((-.005+soc*.01+.0008*(Math.random()-.5))).toFixed(5);});
+  new Chart(document.getElementById('policyChart').getContext('2d'),{
+    type:'bar',
+    data:{labels:bins,datasets:[{
+      label:'RL δ Action per SoC Bin',data:polData,
+      backgroundColor:polData.map(v=>v>0?'rgba(179,255,0,.45)':'rgba(255,61,90,.45)'),
+      borderColor:polData.map(v=>v>0?'#b3ff00':'#ff3d5a'),borderWidth:1
+    }]},
+    options:baseOpts('SoC Bin','Action δ')
+  });
+  // Max Q per episode
+  const maxQs=Array.from({length:N_EP},(_,e)=>{const c=genQMap(e);return Math.max(...c.map(x=>x.q));});
+  new Chart(document.getElementById('qEvolChart').getContext('2d'),{
+    type:'line',
+    data:{labels:Array.from({length:N_EP},(_,i)=>i+1),datasets:[{
+      label:'Max Q-Value',data:maxQs,
+      borderColor:'#b3ff00',borderWidth:2,pointRadius:4,pointBackgroundColor:'#b3ff00',
+      fill:true,backgroundColor:'rgba(179,255,0,.06)',tension:.4
+    }]},
+    options:baseOpts('Episode','Max Q')
+  });
+  // Mean V(s)
+  const meanVs=Array.from({length:N_EP},(_,e)=>{const c=genQMap(e);return c.reduce((s,x)=>s+x.q,0)/c.length;});
+  new Chart(document.getElementById('valChart').getContext('2d'),{
+    type:'line',
+    data:{labels:Array.from({length:N_EP},(_,i)=>i+1),datasets:[{
+      label:'Mean V(s)',data:meanVs,
+      borderColor:'#00ffe7',borderWidth:2,pointRadius:4,pointBackgroundColor:'#00ffe7',
+      fill:true,backgroundColor:'rgba(0,255,231,.05)',tension:.4
+    }]},
+    options:baseOpts('Episode','V(s)')
+  });
+}
+initQmapCharts();
+
+// ══════════════════════════════════════
+// COMPARISON TAB
+// ══════════════════════════════════════
+let compareInited=false;
+function initCompare(){
+  if(compareInited) return; compareInited=true;
+  const finalEp=EPISODES[N_EP-1];
+  const rlRMSE=EP_RMSE[N_EP-1];
+  const rlMAE=finalEp.errors.reduce((s,e)=>s+e,0)/finalEp.errors.length;
+  const ccMAE=CC_SOC.reduce((s,v,i)=>s+Math.abs(v-TRUE_SOC[i]),0)/N_STEPS;
+  const rlMax=Math.max(...finalEp.errors);
+  const ccMax=Math.max(...CC_SOC.map((v,i)=>Math.abs(v-TRUE_SOC[i])));
+  const mu=TRUE_SOC.reduce((s,v)=>s+v,0)/N_STEPS;
+  const ssT=TRUE_SOC.reduce((s,v)=>s+(v-mu)**2,0);
+  const rlR2=Math.max(0,1-finalEp.errors.reduce((s,e)=>s+e*e,0)/ssT);
+  const ccR2=Math.max(0,1-CC_SOC.reduce((s,v,i)=>s+(v-TRUE_SOC[i])**2,0)/ssT);
+
+  const metrics=[
+    {lbl:'RMSE',base:CC_RMSE.toFixed(5),rl:rlRMSE.toFixed(5),basePct:100,rlPct:(rlRMSE/CC_RMSE*100).toFixed(1),lower:true},
+    {lbl:'MAE', base:ccMAE.toFixed(5),rl:rlMAE.toFixed(5),basePct:100,rlPct:(rlMAE/ccMAE*100).toFixed(1),lower:true},
+    {lbl:'Max Error',base:ccMax.toFixed(5),rl:rlMax.toFixed(5),basePct:100,rlPct:(rlMax/ccMax*100).toFixed(1),lower:true},
+    {lbl:'R²',base:ccR2.toFixed(4),rl:rlR2.toFixed(4),basePct:(ccR2*100).toFixed(1),rlPct:(rlR2*100).toFixed(1),lower:false},
+  ];
+  const vm=document.getElementById('vsMetrics');
+  metrics.forEach(m=>{
+    vm.innerHTML+=`<div class="vs-metric">
+      <div><div class="vsm-bar-wrap"><div class="vsm-bar base-bar" style="width:${m.basePct}%;"></div></div></div>
+      <div class="vsm-center">
+        <div class="vsm-label">${m.lbl}</div>
+        <div class="vsm-nums"><span class="vsm-base-num">${m.base}</span><span class="vsm-rl-num">${m.rl}</span></div>
+      </div>
+      <div><div class="vsm-bar-wrap"><div class="vsm-bar rl-bar" style="width:${m.rlPct}%;"></div></div></div>
+    </div>`;
+  });
+
+  // SOC chart
+  const sk=4,tl=TRUE_SOC.filter((_,i)=>i%sk===0);
+  const cl=CC_SOC.filter((_,i)=>i%sk===0);
+  const rl=finalEp.preds.filter((_,i)=>i%sk===0);
+  const lb=tl.map((_,i)=>i*sk);
+  new Chart(document.getElementById('vsSOC').getContext('2d'),{
+    type:'line',
+    data:{labels:lb,datasets:[
+      {label:'True SoC',data:tl,borderColor:'#00b4ff',borderWidth:2,pointRadius:0,tension:.3},
+      {label:'CC Baseline',data:cl,borderColor:'#ff3d5a',borderWidth:1.5,pointRadius:0,tension:.3,borderDash:[5,4]},
+      {label:'RL Agent',data:rl,borderColor:'#b3ff00',borderWidth:1.5,pointRadius:0,tension:.3},
+    ]},
+    options:baseOpts('Timestep','SoC')
+  });
+  // Error chart
+  new Chart(document.getElementById('vsErr').getContext('2d'),{
+    type:'line',
+    data:{labels:lb,datasets:[
+      {label:'CC |Error|',data:cl.map((v,i)=>Math.abs(v-tl[i])),borderColor:'#ff3d5a',borderWidth:1.5,pointRadius:0,tension:.2,fill:true,backgroundColor:'rgba(255,61,90,.07)'},
+      {label:'RL |Error|', data:rl.map((v,i)=>Math.abs(v-tl[i])),borderColor:'#b3ff00',borderWidth:1.5,pointRadius:0,tension:.2,fill:true,backgroundColor:'rgba(179,255,0,.07)'},
+    ]},
+    options:baseOpts('Timestep','|Error|')
+  });
+  // Histogram
+  const bins=22,bw=0.065/bins;
+  const ccH=new Array(bins).fill(0),rlH=new Array(bins).fill(0);
+  CC_SOC.forEach((v,i)=>{const e=Math.abs(v-TRUE_SOC[i]);const b=Math.min(bins-1,Math.floor(e/bw));ccH[b]++;});
+  finalEp.errors.forEach(e=>{const b=Math.min(bins-1,Math.floor(e/bw));rlH[b]++;});
+  const bLbls=Array.from({length:bins},(_,i)=>(i*bw).toFixed(3));
+  new Chart(document.getElementById('errDist').getContext('2d'),{
+    type:'bar',
+    data:{labels:bLbls,datasets:[
+      {label:'CC Baseline',data:ccH,backgroundColor:'rgba(255,61,90,.4)',borderColor:'#ff3d5a',borderWidth:1},
+      {label:'RL Agent',data:rlH,backgroundColor:'rgba(179,255,0,.4)',borderColor:'#b3ff00',borderWidth:1},
+    ]},
+    options:{...baseOpts('|Error| Bin','Count'),scales:{...baseOpts().scales,x:{...baseOpts().scales.x,ticks:{...baseOpts().scales.x.ticks,maxTicksLimit:8}}}}
+  });
+  // Donut
+  setTimeout(()=>{
+    const ccF=Math.min(1,CC_RMSE/.06),rlF=Math.min(1,rlRMSE/.06);
+    document.getElementById('donutBase').setAttribute('stroke-dashoffset',(301.6*(1-ccF)).toFixed(1));
+    document.getElementById('donutRL').setAttribute('stroke-dashoffset',(301.6*(1-rlF)).toFixed(1));
+  },400);
+}
+
+// ══════════════════════════════════════
+// TRAINING CURVES TAB
+// ══════════════════════════════════════
+let trainInited=false;
+function initTrain(){
+  if(trainInited) return; trainInited=true;
+  const N=50;
+  const sLbls=Array.from({length:N},(_,i)=>((i+1)*6)+'k');
+  // Reward
+  const rD=Array.from({length:N},(_,i)=>{const m=i/N;return+(-0.026+0.014*m+0.004*(Math.random()-.5)).toFixed(5);});
+  const rSmooth=rD.map((_,i,a)=>{const w=a.slice(Math.max(0,i-5),i+1);return+(w.reduce((s,x)=>s+x,0)/w.length).toFixed(5);});
+  new Chart(document.getElementById('trainRew').getContext('2d'),{
+    type:'line',
+    data:{labels:sLbls,datasets:[
+      {label:'Raw',data:rD,borderColor:'rgba(179,255,0,.4)',borderWidth:1,pointRadius:0,tension:.2},
+      {label:'Smoothed',data:rSmooth,borderColor:'#b3ff00',borderWidth:2,pointRadius:0,tension:.4,fill:true,backgroundColor:'rgba(179,255,0,.05)'},
+    ]},
+    options:{...baseOpts('Timestep (k)','Reward'),scales:{...baseOpts().scales,x:{...baseOpts().scales.x,ticks:{maxTicksLimit:10,color:'#3a5570'}}}}
+  });
+  // Loss
+  const pL=Array.from({length:N},(_,i)=>+(0.04*(1-i/N*.8)+0.004*(Math.random())).toFixed(5));
+  const vL=Array.from({length:N},(_,i)=>+(0.09*(1-i/N*.75)+0.008*(Math.random())).toFixed(5));
+  new Chart(document.getElementById('trainLoss').getContext('2d'),{
+    type:'line',
+    data:{labels:sLbls,datasets:[
+      {label:'Policy Loss',data:pL,borderColor:'#b3ff00',borderWidth:1.5,pointRadius:0,tension:.3},
+      {label:'Value Loss', data:vL,borderColor:'#ff3d5a',borderWidth:1.5,pointRadius:0,tension:.3},
+    ]},
+    options:{...baseOpts('Timestep (k)','Loss'),scales:{...baseOpts().scales,x:{...baseOpts().scales.x,ticks:{maxTicksLimit:10,color:'#3a5570'}},y:{...baseOpts().scales.y,type:'logarithmic',ticks:{color:'#3a5570'}}}}
+  });
+  // RMSE
+  const rmD=Array.from({length:N},(_,i)=>{
+    const ep=Math.floor(i/N*N_EP);return+EP_RMSE[Math.min(ep,N_EP-1)].toFixed(6);
+  });
+  const ccLine=new Array(N).fill(+CC_RMSE.toFixed(5));
+  new Chart(document.getElementById('trainRMSE').getContext('2d'),{
+    type:'line',
+    data:{labels:sLbls,datasets:[
+      {label:'RL RMSE',data:rmD,borderColor:'#00ffe7',borderWidth:2,pointRadius:0,tension:.3,fill:true,backgroundColor:'rgba(0,255,231,.05)'},
+      {label:'CC Baseline',data:ccLine,borderColor:'#ff3d5a',borderWidth:1,pointRadius:0,borderDash:[6,3]},
+    ]},
+    options:{...baseOpts('Timestep (k)','RMSE'),scales:{...baseOpts().scales,x:{...baseOpts().scales.x,ticks:{maxTicksLimit:10,color:'#3a5570'}}}}
+  });
+  // Entropy
+  const eD=Array.from({length:N},(_,i)=>+(0.06*Math.exp(-3.2*i/N)+0.002*(Math.random())).toFixed(5));
+  new Chart(document.getElementById('trainEnt').getContext('2d'),{
+    type:'line',
+    data:{labels:sLbls,datasets:[
+      {label:'Entropy',data:eD,borderColor:'#ffb300',borderWidth:2,pointRadius:0,tension:.3,fill:true,backgroundColor:'rgba(255,179,0,.05)'},
+    ]},
+    options:{...baseOpts('Timestep (k)','Entropy'),scales:{...baseOpts().scales,x:{...baseOpts().scales.x,ticks:{maxTicksLimit:10,color:'#3a5570'}}}}
+  });
+  // Config
+  const cfg=[
+    ['Algorithm','RecurrentPPO'],['Policy','MlpLstmPolicy'],['Learning Rate','2e-4'],
+    ['n_steps','256'],['batch_size','128'],['γ (gamma)','0.995'],
+    ['GAE λ','0.95'],['Total Steps','300,000'],['ent_coef','0.0'],
+    ['Action Space','Box(−0.005, +0.005)'],['Obs Space','Box(4,) scaled'],
+    ['Reward Fn','−√(ε²+1e-4) − 0.05|δ|'],
+  ];
+  const cg=document.getElementById('cfgGrid');
+  cfg.forEach(([k,v])=>cg.innerHTML+=`<div class="cfg-row"><span class="cfg-k">${k}</span><span class="cfg-v">${v}</span></div>`);
+}
+
+// ══════════════════════════════════════
+// TAB SWITCHING
+// ══════════════════════════════════════
+function gotoTab(id,el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('on'));
+  document.getElementById('page-'+id).classList.add('on');
+  el.classList.add('on');
+  if(id==='compare') initCompare();
+  if(id==='train')   initTrain();
+  if(id==='qmap') setTimeout(()=>{
+    renderQmap(+document.getElementById('qEpSlider').value||1);
+  },50);
+}
+
+// ══════════════════════════════════════
+// CLOCK
+// ══════════════════════════════════════
+setInterval(()=>{
+  document.getElementById('live-clock').textContent=
+    new Date().toLocaleTimeString('en-US',{hour12:false});
+},1000);
+
+// Resize NN canvas on window resize
+window.addEventListener('resize',()=>{resizeNN();drawNN();});
+</script>
+</body>
+</html>
